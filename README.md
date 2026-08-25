@@ -1,5 +1,13 @@
 # Vast PyWorker Examples
 
+## Tsubasa production fork
+
+This fork preserves Vast's worker behavior while lowering the production root
+logging threshold to `INFO` after worker construction. Vast SDK DEBUG output
+contains complete inference payloads and signed worker-route query credentials;
+those values must not be retained in provider logs. Runtime lifecycle,
+benchmark, readiness, warning, and error messages remain available.
+
 This repository contains **example PyWorkers** used by Vast.ai’s default Serverless templates (e.g., vLLM, TGI, ComfyUI, Wan, ACE). A PyWorker is a lightweight Python HTTP proxy that runs alongside your model server and:
 
 - Exposes one or more HTTP routes (e.g., `/v1/completions`, `/generate/sync`)

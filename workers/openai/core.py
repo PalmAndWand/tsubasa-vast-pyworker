@@ -5,6 +5,7 @@ here and the per-engine adapters just pass an EngineDefaults. Every default is
 env-overridable: the image is version-locked to the engine, so it owns the
 engine/version-specific values (log path, health endpoint, log grammar)."""
 
+import logging
 import os
 import random
 from dataclasses import dataclass, field
@@ -101,4 +102,16 @@ def run(defaults: EngineDefaults) -> None:
             on_info=_env_lines("MODEL_INFO_LOG_MSGS", defaults.info_log_msgs),
         ),
     )
-    Worker(WorkerConfig(**config)).run()
+    worker = Worker(WorkerConfig(**config))
+
+    # Vast SDK currently raises the root logger to DEBUG in Worker.__init__.
+    # DEBUG includes complete inference payloads and signed worker-route query
+    # credentials, neither of which belongs in production provider logs. Keep
+    # lifecycle, benchmark, and failure evidence while suppressing request
+    # bodies before the HTTP server begins accepting traffic.
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    for handler in root_logger.handlers:
+        handler.setLevel(logging.INFO)
+
+    worker.run()
