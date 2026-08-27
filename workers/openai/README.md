@@ -86,4 +86,18 @@ Call to `/v1/completions` with json response
 ```bash
 python -m workers.openai.client --completion --endpoint <ENDPOINT_NAME> --model <MODEL_NAME>
 ```
+## Readiness benchmark
 
+The readiness benchmark keeps the upstream defaults unless explicitly tuned:
+
+| Variable | Default | Allowed range |
+| --- | ---: | ---: |
+| `BENCHMARK_PROMPT_WORDS` | 250 | 1-4096 |
+| `BENCHMARK_MAX_TOKENS` | 500 | 1-4096 |
+| `BENCHMARK_CONCURRENCY` | 10 | 1-128 |
+| `BENCHMARK_RUNS` | 3 | 1-20 |
+
+Production templates can reduce cold-start time with a smaller benchmark while
+retaining enough concurrency and generated tokens to estimate worker capacity.
+Invalid values fail during worker startup instead of silently changing the
+autoscaler's performance estimate.
