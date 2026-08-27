@@ -63,6 +63,47 @@ function install_vastai_sdk() {
         echo "Force reinstalling vastai"
     fi
 
+    # Tsubasa installs a reviewed Vast SDK commit from source. The upstream
+    # release metadata still pins two dependencies with known fixes available,
+    # so patch only those exact declarations before installing the package over
+    # the fully pinned runtime lock. This keeps cold-start installs deterministic
+    # without maintaining a second SDK fork.
+    if [ -n "${SDK_REVISION:-}" ]; then
+        local sdk_repository="${VAST_SDK_REPOSITORY:-https://github.com/vast-ai/vast-cli.git}"
+        local sdk_dir
+        sdk_dir="$(mktemp -d)"
+        if ! git -C "$sdk_dir" init \
+            || ! git -C "$sdk_dir" remote add origin "$sdk_repository" \
+            || ! git -C "$sdk_dir" fetch --depth 1 origin "$SDK_REVISION" \
+            || ! git -C "$sdk_dir" checkout --detach FETCH_HEAD \
+            || [ "$(git -C "$sdk_dir" rev-parse HEAD)" != "$SDK_REVISION" ]; then
+            rm -rf -- "$sdk_dir"
+            report_error_and_exit "Failed to fetch the pinned Vast SDK revision"
+        fi
+        if ! grep -Fxq '  "cryptography==49.0.0",' "$sdk_dir/pyproject.toml" \
+            || ! grep -Fxq '  "pillow==12.2.0",' "$sdk_dir/pyproject.toml"; then
+            rm -rf -- "$sdk_dir"
+            report_error_and_exit "Pinned Vast SDK dependency metadata changed"
+        fi
+        sed -i \
+            -e 's/"cryptography==49\.0\.0"/"cryptography==50.0.0"/' \
+            -e 's/"pillow==12\.2\.0"/"pillow==12.3.0"/' \
+            "$sdk_dir/pyproject.toml"
+        if ! uv pip install "${uv_flags[@]}" \
+            --requirements "$SERVER_DIR/requirements.lock" \
+            || ! uv pip install "${uv_flags[@]}" --no-deps "$sdk_dir" \
+            || ! uv pip check; then
+            rm -rf -- "$sdk_dir"
+            report_error_and_exit "Failed to install the pinned Vast SDK runtime"
+        fi
+        rm -rf -- "$sdk_dir"
+        if [ -n "${SDK_VERSION:-}" ] \
+            && ! python3 -c 'from importlib.metadata import version; import os; assert version("vastai") == os.environ["SDK_VERSION"]'; then
+            report_error_and_exit "Installed Vast SDK version did not match SDK_VERSION"
+        fi
+        return 0
+    fi
+
     # If SDK_BRANCH is set, install vastai from the vast-cli repo at that branch/tag/commit.
     if [ -n "${SDK_BRANCH:-}" ]; then
         if [ -n "${SDK_VERSION:-}" ]; then
@@ -193,8 +234,10 @@ elif [ ! -d "$ENV_PATH" ]; then
         report_error_and_exit "Failed to activate virtual environment"
     fi
 
-    if ! uv pip install -r "${SERVER_DIR}/requirements.txt"; then
-        report_error_and_exit "Failed to install Python requirements"
+    if [ -z "${SDK_REVISION:-}" ]; then
+        if ! uv pip install -r "${SERVER_DIR}/requirements.txt"; then
+            report_error_and_exit "Failed to install Python requirements"
+        fi
     fi
 
     install_vastai_sdk

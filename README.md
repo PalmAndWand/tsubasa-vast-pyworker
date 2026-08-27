@@ -8,6 +8,11 @@ contains complete inference payloads and signed worker-route query credentials;
 those values must not be retained in provider logs. Runtime lifecycle,
 benchmark, readiness, warning, and error messages remain available.
 
+Production workers also use `requirements.lock` and a digest-pinned Vast SDK
+source revision. When `SDK_REVISION` is set, startup verifies that exact commit,
+applies the two reviewed dependency-version fixes, installs the lock with `uv`,
+and runs `uv pip check` before accepting work.
+
 This repository contains **example PyWorkers** used by Vast.ai’s default Serverless templates (e.g., vLLM, TGI, ComfyUI, Wan, ACE). A PyWorker is a lightweight Python HTTP proxy that runs alongside your model server and:
 
 - Exposes one or more HTTP routes (e.g., `/v1/completions`, `/generate/sync`)
@@ -110,7 +115,9 @@ Exact worker paths and naming may vary by template; use the `workers/` directory
 
 1. Install Python dependencies for the examples you plan to run:
    ```bash
-   pip install -r requirements.txt
+   uv venv
+   source .venv/bin/activate
+   uv pip install -r requirements.txt
    ```
 
 2. Start your model server locally (vLLM, TGI, ComfyUI, etc.) and ensure:
@@ -139,6 +146,8 @@ To use a custom PyWorker with Serverless:
 2. In your Serverless template / endpoint configuration, set:
    - `PYWORKER_REPO` to your Git repository URL
    - (Optional) `PYWORKER_REF` to a git ref (branch, tag, or commit)
+   - For the production bootstrap, `SDK_REVISION` to the reviewed Vast SDK
+     commit and `SDK_VERSION` to its expected package version
 
 3. The template startup script will clone/install and run your `worker.py`.
 
