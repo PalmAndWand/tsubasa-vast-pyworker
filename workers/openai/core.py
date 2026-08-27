@@ -22,6 +22,18 @@ def _env_lines(name, default):
     return [s for ln in raw.splitlines() if (s := ln.strip())] if raw else default
 
 
+def _env_int(name, default, minimum, maximum):
+    """Read one bounded positive integer without accepting ambiguous values."""
+    raw = os.environ.get(name, str(default)).strip()
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise ValueError(f"{name} must be an integer") from error
+    if value < minimum or value > maximum:
+        raise ValueError(f"{name} must be between {minimum} and {maximum}")
+    return value
+
+
 # One template serves both lanes; on-demand templates set only the engine var, so the
 # benchmark recovers the model id from it. Only one is ever set.
 _MODEL_NAME_VARS = ("MODEL_NAME", "VLLM_MODEL", "SGLANG_MODEL", "LLAMA_MODEL")
@@ -35,11 +47,13 @@ def _resolve_model_name():
 class EngineDefaults:
     """Per-engine baked defaults; each is overridden by the matching env var if set."""
 
-    name: str                 # engine id for the startup banner
-    model_log_file: str       # MODEL_LOG
+    name: str  # engine id for the startup banner
+    model_log_file: str  # MODEL_LOG
     load_log_msgs: List[str]  # MODEL_LOAD_LOG_MSG — model-loaded markers
     error_log_msgs: List[str]  # MODEL_ERROR_LOG_MSGS — failed-load markers
-    info_log_msgs: List[str] = field(default_factory=lambda: ['"message":"Download'])  # MODEL_INFO_LOG_MSGS
+    info_log_msgs: List[str] = field(
+        default_factory=lambda: ['"message":"Download']
+    )  # MODEL_INFO_LOG_MSGS
 
 
 MODEL_SERVER_URL = "http://127.0.0.1"
@@ -47,6 +61,10 @@ MODEL_SERVER_PORT = 18000
 
 nltk.download("words")
 WORD_LIST = nltk.corpus.words.words()
+BENCHMARK_PROMPT_WORDS = _env_int("BENCHMARK_PROMPT_WORDS", 250, 1, 4096)
+BENCHMARK_MAX_TOKENS = _env_int("BENCHMARK_MAX_TOKENS", 500, 1, 4096)
+BENCHMARK_CONCURRENCY = _env_int("BENCHMARK_CONCURRENCY", 10, 1, 128)
+BENCHMARK_RUNS = _env_int("BENCHMARK_RUNS", 3, 1, 20)
 
 
 def request_parser(request):
@@ -56,9 +74,16 @@ def request_parser(request):
 def completions_benchmark_generator() -> dict:
     model = _resolve_model_name()
     if not model:
-        raise ValueError("No model set: MODEL_NAME / VLLM_MODEL / SGLANG_MODEL / LLAMA_MODEL all empty")
-    prompt = " ".join(random.choices(WORD_LIST, k=250))
-    return {"model": model, "prompt": prompt, "temperature": 0.7, "max_tokens": 500}
+        raise ValueError(
+            "No model set: MODEL_NAME / VLLM_MODEL / SGLANG_MODEL / LLAMA_MODEL all empty"
+        )
+    prompt = " ".join(random.choices(WORD_LIST, k=BENCHMARK_PROMPT_WORDS))
+    return {
+        "model": model,
+        "prompt": prompt,
+        "temperature": 0.7,
+        "max_tokens": BENCHMARK_MAX_TOKENS,
+    }
 
 
 def run(defaults: EngineDefaults) -> None:
@@ -85,7 +110,9 @@ def run(defaults: EngineDefaults) -> None:
                 request_parser=request_parser,
                 max_queue_time=600.0,
                 benchmark_config=BenchmarkConfig(
-                    generator=completions_benchmark_generator, concurrency=10, runs=3
+                    generator=completions_benchmark_generator,
+                    concurrency=BENCHMARK_CONCURRENCY,
+                    runs=BENCHMARK_RUNS,
                 ),
             ),
             HandlerConfig(
